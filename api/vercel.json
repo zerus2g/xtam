@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/collect",
+      "destination": "/api/collect"
+    },
+    {
+      "source": "/collect/:path*",
+      "destination": "/api/collect"
+    }
+  ]
+}

